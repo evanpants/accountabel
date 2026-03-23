@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Quest Board 🎯</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>"/>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet"/>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body,#root{min-height:100%;background:#FFFBF0;font-family:'Nunito',sans-serif}
+.qb-btn:hover{transform:translate(-2px,-2px);box-shadow:5px 5px 0 #1A1A2E!important}
+.qb-btn:active{transform:translate(1px,1px);box-shadow:1px 1px 0 #1A1A2E!important}
+.qb-card-hover:hover{transform:translate(-2px,-2px);box-shadow:7px 7px 0 #1A1A2E!important;cursor:pointer}
+.qb-card,.qb-btn{transition:transform .12s,box-shadow .12s}
+@keyframes shake{0%,100%{transform:rotate(-1.5deg)}50%{transform:rotate(1.5deg)}}
+@keyframes popin{0%{transform:scale(.85);opacity:0}100%{transform:scale(1);opacity:1}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+@keyframes slide-down{0%{transform:translateY(-10px);opacity:0}100%{transform:translateY(0);opacity:1}}
+.shame-shake{animation:shake .45s ease infinite}
+.popin{animation:popin .28s cubic-bezier(.34,1.56,.64,1)}
+.pulse-anim{animation:pulse 2s ease infinite}
+.slide-down{animation:slide-down .22s ease}
+textarea,input,select{font-family:'Nunito',sans-serif!important}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:#f0e8d8}
+::-webkit-scrollbar-thumb{background:#c9b89a;border-radius:3px}
+</style>
+</head>
+<body>
+<div id="root"><div style="display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:'Fredoka One',cursive;font-size:26px;color:#1A1A2E">⚡ Loading Quest Board…</div></div>
+<script type="text/babel" data-presets="react">
+
+// =====================================================
+//  STEP 1: PASTE YOUR JSONBIN DETAILS HERE
+//  (Free setup instructions are shown inside the app
+//   until you fill these in)
+// =====================================================
+const JSONBIN_BIN_ID  = "PASTE_BIN_ID_HERE";
+const JSONBIN_API_KEY = "PASTE_API_KEY_HERE";
+// =====================================================
+
+const JSONBIN_URL = `https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`;
+const HEADERS = {"Content-Type":"application/json","X-Master-Key":JSONBIN_API_KEY,"X-Bin-Versioning":"false"};
+
+const db = {
+  async read() {
+    try {
+      const r = await fetch(JSONBIN_URL+"/latest",{headers:HEADERS});
+      if(!r.ok) throw new Error("read failed");
+      return (await r.json()).record||{};
+    } catch(e){ console.error("DB read:",e); return {}; }
+  },
+  async write(data) {
+    try {
+      const r = await fetch(JSONBIN_URL,{method:"PUT",headers:HEADERS,body:JSON.stringify(data)});
+      if(!r.ok) throw new Error("write failed");
+    } catch(e){ console.error("DB write:",e); }
+  },
+  async update(fn) {
+    const cur = await db.read();
+    const next = fn(cur);
+    await db.write(next);
+    return next;
+  }
+};
+
+const {useState,useEffect,useRef,useCallback} = React;
+
+const C = {cream:"#FFFBF0",navy:"#1A1A2E",coral:"#FF5C5C",yellow:"#FFD93D",green:"#5CB85C",purple:"#9B5DE5",orange:"#FF9F1C",blue:"#4D96FF",teal:"#00B4B4"};
+
+const CATS=[{id:"music",label:"Music",emoji:"🎵"},{id:"sport",label:"Sport",emoji:"⚽"},{id:"hiking",label:"Hiking",emoji:"🥾"},{id:"craft",label:"Craft",emoji:"🧵"},{id:"cooking",label:"Cooking",emoji:"🍳"},{id:"art",label:"Art",emoji:"🎨"},{id:"language",label:"Language",emoji:"🗣️"},{id:"fitness",label:"Fitness",emoji:"💪"},{id:"reading",label:"Reading",emoji:"📚"},{id:"gaming",label:"Gaming",emoji:"🎮"},{id:"other",label:"Other",emoji:"⭐"}];
+const MEMBER_EMOJIS=["🦁","🐯","🦊","🐼","🐨","🦋","🦄","🐉","🦅","🐙","🦚","🦜","🐸","🦩","🐺","🦞","🦒","🦀"];
+const SHAME_MSGS=["👀 We see you doing absolutely nothing…","😴 This goal has entered a coma","🦥 Sloth mode: permanently activated","⏰ *taps watch so aggressively it breaks*","🧟 Goal status: flatlined","📺 Netflix is winning. Goals are losing.","🌵 Drier than the Sahara over here","🫠 Slowly melting from inaction"];
+const NUDGE_MSGS=["Your goal called — it misses you 👋","We believe in you! (barely, but still) 😅","GET. UP. NOW. 📣","Even a snail is moving faster 🐌","Netflix can wait. Goals cannot ❌📺","Your future self is on their knees begging 🙏","The couch has claimed another victim 🛋️","This quest won't complete itself… No. 😐","A gentle nudge: DO THE THING 🔔"];
+const XP_TITLES=[[0,"🥚 Egg"],[50,"🐣 Hatchling"],[100,"🐥 Chick"],[200,"🏃 Adventurer"],[350,"🔥 On Fire"],[500,"⚡ Legend"],[750,"👑 Overlord"],[1000,"🌟 Transcendent"]];
+
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+const daysSince=iso=>!iso?999:Math.floor((Date.now()-new Date(iso))/86400000);
+const daysUntil=iso=>!iso?null:Math.ceil((new Date(iso)-Date.now())/86400000);
+const pct=g=>!g.milestones?.length?0:g.milestones.filter(m=>m.completed).length/g.milestones.length;
+const getTitle=pts=>{let t=XP_TITLES[0];for(const x of XP_TITLES){if(pts>=x[0])t=x;}return t[1];};
+const calcPts=(mid,goals,nudges)=>{let p=0;(goals||[]).filter(g=>g.memberId===mid).forEach(g=>{p+=10;p+=(g.milestones||[]).filter(m=>m.completed).length*25;if(g.milestones?.length&&pct(g)===1)p+=100;p+=(g.checkins||[]).filter(c=>c.fromMemberId===mid).length*5;});(nudges||[]).filter(n=>n.fromMemberId===mid).forEach(()=>p+=5);return p;};
+const getCat=id=>CATS.find(c=>c.id===id)||CATS[CATS.length-1];
+const fmtDate=iso=>new Date(iso).toLocaleDateString("en",{month:"short",day:"numeric",year:"2-digit"});
+
+const card=(x={})=>({background:"#fff",borderRadius:16,border:`3px solid ${C.navy}`,boxShadow:`4px 4px 0 ${C.navy}`,padding:"1rem",...x});
+const btn=(bg=C.coral,color="#fff",x={})=>({background:bg,color,border:`2.5px solid ${C.navy}`,borderRadius:10,padding:"7px 16px",cursor:"pointer",fontWeight:800,fontFamily:"Nunito,sans-serif",boxShadow:`3px 3px 0 ${C.navy}`,fontSize:13,display:"inline-flex",alignItems:"center",gap:5,lineHeight:1.3,...x});
+const inp=(x={})=>({border:`2.5px solid ${C.navy}`,borderRadius:8,padding:"8px 12px",fontFamily:"Nunito,sans-serif",fontSize:14,width:"100%",outline:"none",background:"#fff",...x});
+const tag=(bg=C.yellow,x={})=>({background:bg,color:C.navy,borderRadius:20,padding:"2px 9px",fontSize:11,fontWeight:800,border:`2px solid ${C.navy}`,display:"inline-block",lineHeight:1.6,...x});
+
+function ProgressBar({value,color=C.coral,height=12}){
+  return <div style={{height,borderRadius:height/2,border:`2px solid ${C.navy}`,background:"#eee",overflow:"hidden"}}><div style={{width:`${Math.min(100,Math.round(value*100))}%`,height:"100%",background:color,transition:"width 0.5s",backgroundImage:"repeating-linear-gradient(45deg,transparent,transparent 5px,rgba(255,255,255,0.25) 5px,rgba(255,255,255,0.25) 10px)"}}/></div>;
+}
+
+function ShameMeter({ds}){
+  if(ds<5) return null;
+  return <div className={ds>10?"shame-shake":""} style={{background:"#FFE5E5",border:`2px dashed ${C.coral}`,borderRadius:8,padding:"5px 10px",fontSize:12,fontWeight:800,color:C.coral,marginTop:8,textAlign:"center"}}>{SHAME_MSGS[Math.floor(ds/3)%SHAME_MSGS.length]} <span style={{opacity:.65,fontWeight:600}}>({ds}d inactive)</span></div>;
+}
+
+// ─── SETUP SCREEN ───────────────────────────────────
+function SetupScreen(){
+  return(
+    <div style={{minHeight:"100vh",background:C.cream,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem",fontFamily:"Nunito,sans-serif"}}>
+      <div style={{...card({maxWidth:540,width:"100%",padding:"2rem"})}}>
+        <div style={{fontSize:48,textAlign:"center",marginBottom:8}}>🔧</div>
+        <h2 style={{fontFamily:"Fredoka One,cursive",fontSize:28,color:C.navy,textAlign:"center",marginBottom:16}}>One-time setup needed</h2>
+        <p style={{fontSize:14,lineHeight:1.7,marginBottom:16,color:"#444"}}>Open <strong>index.html</strong> in a text editor and fill in your JSONBin credentials at the top. Here's how — takes about 2 minutes, completely free, no credit card:</p>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {[
+            ["1","Go to jsonbin.io","Click Sign Up — just needs an email and password"],
+            ["2","Create a Bin","Click CREATE BIN, paste {} as the content, click CREATE"],
+            ["3","Copy your Bin ID","It appears in the URL bar after /b/ — looks like 64f3ab12..."],
+            ["4","Copy your API Key","Click your avatar → API Keys → copy the Master Key"],
+            ["5","Paste into index.html","Replace PASTE_BIN_ID_HERE and PASTE_API_KEY_HERE at the top of the file"],
+            ["6","Upload & done!","Re-upload index.html to GitHub — your app is live"],
+          ].map(([n,title,desc])=>(
+            <div key={n} style={{display:"flex",gap:12,alignItems:"flex-start",padding:"10px 12px",background:"#FFFBF0",borderRadius:10,border:"1.5px solid #e8e0d0"}}>
+              <div style={{width:28,height:28,borderRadius:"50%",background:C.navy,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:13,flexShrink:0}}>{n}</div>
+              <div><div style={{fontWeight:800,fontSize:14,color:C.navy}}>{title}</div><div style={{fontSize:13,color:"#666",marginTop:2}}>{desc}</div></div>
+            </div>
+          ))}
+        </div>
+        <div style={{marginTop:16,background:"#E8F5E9",border:`2px solid ${C.green}`,borderRadius:8,padding:"10px 14px",fontSize:13,color:"#2E7D32",fontWeight:700}}>
+          ✅ JSONBin free tier = 10,000 requests/month. For a friend group this will last years with no cost.
+        </div>
+        <div style={{marginTop:10,background:"#FFF8E1",border:`2px solid ${C.orange}`,borderRadius:8,padding:"10px 14px",fontSize:13,color:"#555"}}>
+          💡 <strong>jsonbin.io</strong> — no credit card, no phone number, just email + password signup.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── LANDING ────────────────────────────────────────
+function Landing({data,onJoin}){
+  const groupConfig=data.groupConfig||null;
+  const members=data.members||[];
+  const [step,setStep]=useState(groupConfig?"login":"setup");
+  const [groupName,setGroupName]=useState("");
+  const [memberName,setMemberName]=useState("");
+  const [selectedEmoji,setSelectedEmoji]=useState(MEMBER_EMOJIS[0]);
+  const [existingId,setExistingId]=useState(null);
+  const [busy,setBusy]=useState(false);
+
+  const handleSetup=async()=>{
+    if(!groupName.trim()||busy)return;setBusy(true);
+    const cfg={name:groupName.trim(),createdAt:new Date().toISOString()};
+    await db.update(d=>({...d,groupConfig:cfg}));
+    setStep("login");setBusy(false);
+  };
+
+  const handleLogin=async()=>{
+    if(busy)return;setBusy(true);
+    if(existingId){onJoin(members.find(x=>x.id===existingId));}
+    else{
+      if(!memberName.trim()){setBusy(false);return;}
+      const nm={id:uid(),name:memberName.trim(),emoji:selectedEmoji,joinedAt:new Date().toISOString()};
+      await db.update(d=>({...d,members:[...(d.members||[]),nm]}));
+      onJoin(nm);
+    }
+    setBusy(false);
+  };
+
+  const cfg=groupConfig||data.groupConfig;
+  return(
+    <div style={{position:"fixed",inset:0,background:C.cream,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem",overflowY:"auto"}}>
+      {["🎯","🏆","⭐","🎪","🎨","🥾"].map((e,i)=><div key={i} style={{position:"fixed",fontSize:48,opacity:.1,top:`${[15,8,70,80,25,60][i]}%`,left:`${[5,80,3,85,45,92][i]}%`,transform:`rotate(${[-15,10,-8,12,5,-20][i]}deg)`,pointerEvents:"none"}}>{e}</div>)}
+      <div className="popin" style={{...card({maxWidth:460,width:"100%",padding:"2rem",textAlign:"center",position:"relative",zIndex:2})}}>
+        <div style={{fontSize:52,marginBottom:6}}>🎯</div>
+        <h1 style={{fontFamily:"Fredoka One,cursive",fontSize:38,color:C.navy,marginBottom:4}}>Quest Board</h1>
+        <p style={{color:"#888",fontSize:14,marginBottom:28}}>Where friends go from <em>"I should…"</em> to <strong>"I DID IT!"</strong></p>
+
+        {step==="setup"&&(
+          <div className="slide-down">
+            <p style={{fontWeight:800,fontSize:13,marginBottom:6,textAlign:"left"}}>NAME YOUR SQUAD</p>
+            <input style={inp({marginBottom:14,fontSize:16})} placeholder="e.g. The Unstoppables 💪" value={groupName} onChange={e=>setGroupName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleSetup()} autoFocus/>
+            <button className="qb-btn" style={btn(C.coral,"#fff",{width:"100%",justifyContent:"center",fontSize:16,padding:"12px"})} onClick={handleSetup} disabled={busy||!groupName.trim()}>{busy?"Creating…":"Create Our Quest Board 🚀"}</button>
+          </div>
+        )}
+
+        {step==="login"&&(
+          <div className="slide-down">
+            <div style={{...card({background:C.navy,color:"#fff",marginBottom:20,padding:"10px 16px",textAlign:"center"})}}>
+              <div style={{fontFamily:"Fredoka One,cursive",fontSize:22}}>{cfg?.name}</div>
+              <div style={{fontSize:12,opacity:.6}}>Quest Board</div>
+            </div>
+            {members.length>0&&(
+              <div style={{marginBottom:20}}>
+                <p style={{fontWeight:800,fontSize:12,textTransform:"uppercase",textAlign:"left",marginBottom:8}}>Pick Your Character</p>
+                <div style={{display:"flex",flexWrap:"wrap",gap:7,justifyContent:"center"}}>
+                  {members.map(m=><button key={m.id} className="qb-btn" style={btn(existingId===m.id?C.coral:"#fff",existingId===m.id?"#fff":C.navy,{padding:"7px 13px",fontSize:13})} onClick={()=>setExistingId(existingId===m.id?null:m.id)}>{m.emoji} {m.name}</button>)}
+                </div>
+              </div>
+            )}
+            <div style={{borderTop:"2.5px dashed #ddd",paddingTop:18,marginBottom:16}}>
+              <p style={{fontWeight:800,fontSize:12,textTransform:"uppercase",textAlign:"left",marginBottom:8}}>{members.length>0?"Or Join as New Member":"Create Your Character"}</p>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6,justifyContent:"center",marginBottom:10}}>
+                {MEMBER_EMOJIS.map(e=><button key={e} onClick={()=>{setSelectedEmoji(e);setExistingId(null);}} style={{background:selectedEmoji===e&&!existingId?C.yellow:"#f5f5f5",border:`2px solid ${selectedEmoji===e&&!existingId?C.navy:"#ddd"}`,borderRadius:8,padding:"4px 7px",fontSize:18,cursor:"pointer"}}>{e}</button>)}
+              </div>
+              <input style={inp({fontSize:15})} placeholder="Your name…" value={memberName} onChange={e=>{setMemberName(e.target.value);setExistingId(null);}} onKeyDown={e=>e.key==="Enter"&&handleLogin()}/>
+            </div>
+            <button className="qb-btn" style={btn(C.green,"#fff",{width:"100%",justifyContent:"center",fontSize:15,padding:"12px"})} onClick={handleLogin} disabled={busy||(!existingId&&!memberName.trim())}>{busy?"Loading…":existingId?"I'm Back! 👋":"Join the Quest 🎯"}</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── ADD GOAL MODAL ─────────────────────────────────
+function AddGoalModal({memberId,onClose,onSave}){
+  const [title,setTitle]=useState("");const [category,setCategory]=useState("other");
+  const [desc,setDesc]=useState("");const [targetDate,setTargetDate]=useState("");
+  const [milestones,setMilestones]=useState(["",""]);
+  const minD=new Date();minD.setDate(minD.getDate()+1);
+  const handleSave=()=>{
+    if(!title.trim())return;
+    onSave({id:uid(),memberId,title:title.trim(),category,description:desc.trim(),targetDate,createdAt:new Date().toISOString(),lastCheckinAt:new Date().toISOString(),milestones:milestones.filter(m=>m.trim()).map(m=>({id:uid(),text:m.trim(),completed:false,completedAt:null})),checkins:[]});
+  };
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:"1rem"}} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div className="popin" style={{...card({maxWidth:500,width:"100%",maxHeight:"88vh",overflowY:"auto",padding:"1.5rem"})}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
+          <h2 style={{fontFamily:"Fredoka One,cursive",fontSize:26,color:C.navy}}>New Quest 🗺️</h2>
+          <button onClick={onClose} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>&times;</button>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <div><label style={{fontWeight:800,fontSize:11,textTransform:"uppercase",display:"block",marginBottom:5}}>Quest Title *</label><input style={inp()} placeholder='e.g. "Learn 3 guitar chords"' value={title} onChange={e=>setTitle(e.target.value)} autoFocus/></div>
+          <div><label style={{fontWeight:800,fontSize:11,textTransform:"uppercase",display:"block",marginBottom:7}}>Category</label><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{CATS.map(c=><button key={c.id} className="qb-btn" style={btn(category===c.id?C.navy:"#fff",category===c.id?"#fff":C.navy,{padding:"5px 11px",fontSize:12})} onClick={()=>setCategory(c.id)}>{c.emoji} {c.label}</button>)}</div></div>
+          <div><label style={{fontWeight:800,fontSize:11,textTransform:"uppercase",display:"block",marginBottom:5}}>Description (optional)</label><textarea style={{...inp(),minHeight:60,resize:"vertical",lineHeight:1.5}} value={desc} onChange={e=>setDesc(e.target.value)} placeholder="What exactly is this quest?"/></div>
+          <div><label style={{fontWeight:800,fontSize:11,textTransform:"uppercase",display:"block",marginBottom:5}}>Target Deadline (optional)</label><input type="date" style={inp()} value={targetDate} min={minD.toISOString().split("T")[0]} onChange={e=>setTargetDate(e.target.value)}/></div>
+          <div>
+            <label style={{fontWeight:800,fontSize:11,textTransform:"uppercase",display:"block",marginBottom:7}}>Milestones</label>
+            {milestones.map((m,i)=>(
+              <div key={i} style={{display:"flex",gap:7,alignItems:"center",marginBottom:7}}>
+                <div style={{width:24,height:24,borderRadius:"50%",background:C.navy,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,flexShrink:0}}>{i+1}</div>
+                <input style={inp()} placeholder={`Milestone ${i+1}…`} value={m} onChange={e=>{const n=[...milestones];n[i]=e.target.value;setMilestones(n);}}/>
+                {milestones.length>1&&<button onClick={()=>setMilestones(milestones.filter((_,j)=>j!==i))} style={{background:"none",border:`2px solid ${C.navy}`,borderRadius:6,width:26,height:26,cursor:"pointer",fontSize:13,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>}
+              </div>
+            ))}
+            <button className="qb-btn" style={btn("#fff",C.navy,{fontSize:12,padding:"5px 12px"})} onClick={()=>setMilestones([...milestones,""])}>+ Add Milestone</button>
+          </div>
+          <button className="qb-btn" style={btn(C.green,"#fff",{fontSize:15,padding:"12px",justifyContent:"center"})} onClick={handleSave} disabled={!title.trim()}>Launch Quest 🚀</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── GOAL DETAIL ────────────────────────────────────
+function GoalDetail({goal,data,currentMember,onBack,onUpdate}){
+  const [noteText,setNoteText]=useState("");const [saving,setSaving]=useState(false);
+  const members=data.members||[];const nudges=data.nudges||[];
+  const owner=members.find(m=>m.id===goal.memberId);const isOwner=currentMember.id===goal.memberId;
+  const cat=getCat(goal.category);const p=pct(goal);const ds=daysSince(goal.lastCheckinAt);const du=daysUntil(goal.targetDate);const done=p===1&&goal.milestones?.length>0;
+  const goalNudges=nudges.filter(n=>n.goalId===goal.id);const urgencyColor=du===null?C.blue:du<=3?C.coral:du<=10?C.orange:C.green;
+
+  const toggleMilestone=async mId=>{
+    if(!isOwner)return;
+    const updated={...goal,milestones:goal.milestones.map(m=>m.id===mId?{...m,completed:!m.completed,completedAt:m.completed?null:new Date().toISOString()}:m),lastCheckinAt:new Date().toISOString()};
+    const nd=await db.update(d=>({...d,goals:(d.goals||[]).map(g=>g.id===updated.id?updated:g)}));
+    onUpdate(updated,nd);
+  };
+
+  const addNote=async()=>{
+    if(!noteText.trim()||saving)return;setSaving(true);
+    const updated={...goal,checkins:[...(goal.checkins||[]),{id:uid(),text:noteText.trim(),fromMemberId:currentMember.id,createdAt:new Date().toISOString()}],lastCheckinAt:new Date().toISOString()};
+    const nd=await db.update(d=>({...d,goals:(d.goals||[]).map(g=>g.id===updated.id?updated:g)}));
+    onUpdate(updated,nd);setNoteText("");setSaving(false);
+  };
+
+  const sendNudge=async msg=>{
+    const nudge={id:uid(),fromMemberId:currentMember.id,toMemberId:goal.memberId,goalId:goal.id,message:msg,createdAt:new Date().toISOString()};
+    const nd=await db.update(d=>({...d,nudges:[...(d.nudges||[]),nudge]}));
+    onUpdate(goal,nd);
+  };
+
+  return(
+    <div style={{maxWidth:620,margin:"0 auto",padding:"16px 12px 40px"}}>
+      <button className="qb-btn" style={btn("#fff",C.navy,{marginBottom:14,fontSize:13})} onClick={onBack}>← Back</button>
+      <div style={card({marginBottom:14})}>
+        <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+          <div style={{fontSize:44,flexShrink:0,lineHeight:1}}>{cat.emoji}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:7}}>
+              <span style={tag(C.yellow)}>{cat.label}</span>
+              {done&&<span style={tag(C.green)}>✅ Complete!</span>}
+              {du!==null&&du>0&&<span style={tag(urgencyColor)}>{du}d left</span>}
+              {du!==null&&du<=0&&!done&&<span style={tag(C.coral)}>⚠️ Overdue!</span>}
+            </div>
+            <h2 style={{fontFamily:"Fredoka One,cursive",fontSize:24,color:C.navy,marginBottom:4,lineHeight:1.2}}>{goal.title}</h2>
+            <div style={{fontSize:13,color:"#777",display:"flex",alignItems:"center",gap:5}}>
+              <span style={{fontSize:18}}>{owner?.emoji}</span><span>{owner?.name}</span>
+              {goal.targetDate&&<span style={{marginLeft:6}}>· Due {fmtDate(goal.targetDate)}</span>}
+            </div>
+            {goal.description&&<p style={{fontSize:14,color:"#555",marginTop:8,lineHeight:1.5}}>{goal.description}</p>}
+          </div>
+        </div>
+        {goal.milestones?.length>0&&<div style={{marginTop:14}}><div style={{display:"flex",justifyContent:"space-between",fontSize:12,fontWeight:800,marginBottom:5}}><span>Progress</span><span>{goal.milestones.filter(m=>m.completed).length}/{goal.milestones.length}</span></div><ProgressBar value={p} color={done?C.green:C.coral}/></div>}
+        <ShameMeter ds={ds}/>
+      </div>
+
+      {goal.milestones?.length>0&&(
+        <div style={card({marginBottom:14})}>
+          <h3 style={{fontFamily:"Fredoka One,cursive",fontSize:20,marginBottom:12,color:C.navy}}>Checkpoints 🗺️</h3>
+          {goal.milestones.map((m,i)=>(
+            <div key={m.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:i<goal.milestones.length-1?"1.5px dashed #eee":"none"}}>
+              <button onClick={()=>toggleMilestone(m.id)} style={{width:28,height:28,borderRadius:7,border:`2.5px solid ${C.navy}`,background:m.completed?C.green:"#fff",cursor:isOwner?"pointer":"default",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0,color:m.completed?"#fff":"transparent"}}>{m.completed?"✓":""}</button>
+              <span style={{flex:1,fontSize:14,fontWeight:700,textDecoration:m.completed?"line-through":"none",color:m.completed?"#aaa":C.navy}}>{m.text}</span>
+              {m.completed&&m.completedAt&&<span style={tag(C.green,{fontSize:10})}>✅ {fmtDate(m.completedAt)}</span>}
+            </div>
+          ))}
+          {!isOwner&&<p style={{fontSize:12,color:"#aaa",textAlign:"center",marginTop:10}}>Only {owner?.name} can check off milestones</p>}
+        </div>
+      )}
+
+      {goalNudges.length>0&&(
+        <div style={{...card({background:"#FFF8E1",marginBottom:14})}}>
+          <h3 style={{fontFamily:"Fredoka One,cursive",fontSize:20,marginBottom:10,color:C.navy}}>Nudges Received 📣</h3>
+          {goalNudges.slice(-6).map(n=>{const from=members.find(m=>m.id===n.fromMemberId);return(<div key={n.id} style={{display:"flex",gap:8,marginBottom:8}}><span style={{fontSize:20,flexShrink:0}}>{from?.emoji||"👤"}</span><div style={{fontSize:13,lineHeight:1.4}}><strong>{from?.name}:</strong> {n.message}<span style={{color:"#aaa",fontSize:11,marginLeft:6}}>{fmtDate(n.createdAt)}</span></div></div>);})}
+        </div>
+      )}
+
+      {!isOwner&&(
+        <div style={{...card({background:"#FFF0F8",marginBottom:14})}}>
+          <h3 style={{fontFamily:"Fredoka One,cursive",fontSize:20,marginBottom:10,color:C.navy}}>Send a Nudge 👇</h3>
+          <div style={{display:"flex",flexDirection:"column",gap:7}}>{NUDGE_MSGS.map((msg,i)=><button key={i} className="qb-btn" style={btn("#fff",C.navy,{textAlign:"left",fontSize:13,justifyContent:"flex-start",padding:"8px 12px"})} onClick={()=>sendNudge(msg)}>{msg}</button>)}</div>
+        </div>
+      )}
+
+      <div style={card({marginBottom:14})}>
+        <h3 style={{fontFamily:"Fredoka One,cursive",fontSize:20,marginBottom:10,color:C.navy}}>{isOwner?"Check-in Log 📝":"Team Comments 💬"}</h3>
+        {(goal.checkins||[]).length===0&&<p style={{color:"#bbb",fontSize:13,textAlign:"center",padding:"14px 0"}}>{isOwner?"Post your first update to reset the shame meter!":"Cheer them on below!"}</p>}
+        <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:12}}>
+          {(goal.checkins||[]).map(n=>{const from=members.find(m=>m.id===n.fromMemberId);return(<div key={n.id} style={{display:"flex",gap:9}}><div style={{width:32,height:32,borderRadius:9,background:C.navy,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>{from?.emoji||"👤"}</div><div style={{flex:1}}><div style={{fontWeight:800,fontSize:12,marginBottom:2}}>{from?.name}<span style={{color:"#bbb",fontWeight:400,marginLeft:6}}>{fmtDate(n.createdAt)}</span></div><div style={{fontSize:13,lineHeight:1.4,color:"#333"}}>{n.text}</div></div></div>);})}
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <input style={inp({flex:1})} placeholder={isOwner?"Post an update (resets shame meter!) 📝":"Leave encouragement… or shame 😈"} value={noteText} onChange={e=>setNoteText(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addNote()}/>
+          <button className="qb-btn" style={btn(C.blue,"#fff",{whiteSpace:"nowrap"})} onClick={addNote} disabled={saving||!noteText.trim()}>{saving?"…":"Post"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── DASHBOARD ──────────────────────────────────────
+function Dashboard({data,currentMember,onSelectGoal,onDataChange}){
+  const [showAdd,setShowAdd]=useState(false);
+  const goals=data.goals||[];const nudges=data.nudges||[];const members=data.members||[];
+  const myGoals=goals.filter(g=>g.memberId===currentMember.id);
+  const pts=calcPts(currentMember.id,goals,nudges);
+  const myNudges=nudges.filter(n=>n.toMemberId===currentMember.id).slice(-5);
+  const completedCount=myGoals.filter(g=>g.milestones?.length&&pct(g)===1).length;
+  const catColors=[C.coral,C.blue,C.orange,C.purple,C.teal,C.green];
+
+  const handleSaveGoal=async goal=>{
+    const nd=await db.update(d=>({...d,goals:[...(d.goals||[]),goal]}));
+    onDataChange(nd);setShowAdd(false);
+  };
+
+  return(
+    <div style={{maxWidth:640,margin:"0 auto",padding:"16px 12px 40px"}}>
+      <div style={{...card({background:`linear-gradient(135deg,${C.navy} 0%,#2D2E5F 100%)`,color:"#fff"}),marginBottom:14}}>
+        <div style={{display:"flex",alignItems:"center",gap:14}}>
+          <div style={{fontSize:52,lineHeight:1}}>{currentMember.emoji}</div>
+          <div style={{flex:1}}>
+            <div style={{fontFamily:"Fredoka One,cursive",fontSize:24,lineHeight:1}}>{currentMember.name}</div>
+            <div style={{fontSize:18,fontWeight:800,marginTop:2,color:C.yellow}}>{getTitle(pts)}</div>
+            <div style={{display:"flex",gap:7,marginTop:7,flexWrap:"wrap"}}>
+              <span style={tag(C.yellow,{fontSize:12})}>⚡ {pts} XP</span>
+              <span style={tag(C.coral,{fontSize:12})}>🎯 {myGoals.length} Quests</span>
+              <span style={tag(C.green,{fontSize:12})}>✅ {completedCount} Done</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {myNudges.length>0&&(
+        <div className="pulse-anim" style={{...card({background:"#FFF8E1",border:`2.5px dashed ${C.orange}`,marginBottom:14})}}>
+          <div style={{fontWeight:800,fontSize:13,marginBottom:8,color:C.navy}}>📣 Your Squad is Nudging You!</div>
+          {myNudges.slice(-3).map(n=>{const from=members.find(m=>m.id===n.fromMemberId);return <div key={n.id} style={{fontSize:13,marginBottom:5}}><strong>{from?.emoji} {from?.name}:</strong> {n.message}</div>;})}
+        </div>
+      )}
+
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <h2 style={{fontFamily:"Fredoka One,cursive",fontSize:24,color:C.navy}}>My Quests</h2>
+        <button className="qb-btn" style={btn(C.coral)} onClick={()=>setShowAdd(true)}>+ New Quest</button>
+      </div>
+
+      {myGoals.length===0&&(
+        <div style={{...card({textAlign:"center",padding:"2.5rem 1.5rem",borderStyle:"dashed"})}}>
+          <div style={{fontSize:52,marginBottom:8}}>🗺️</div>
+          <div style={{fontFamily:"Fredoka One,cursive",fontSize:22,marginBottom:6,color:C.navy}}>No quests yet!</div>
+          <div style={{color:"#aaa",fontSize:13,marginBottom:18}}>Your squad is watching. 👀</div>
+          <button className="qb-btn" style={btn(C.coral,"#fff",{fontSize:15})} onClick={()=>setShowAdd(true)}>Start a Quest 🚀</button>
+        </div>
+      )}
+
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        {myGoals.map((g,i)=>{
+          const cat=getCat(g.category);const p=pct(g);const ds=daysSince(g.lastCheckinAt);const du=daysUntil(g.targetDate);const done=p===1&&g.milestones?.length>0;const accent=catColors[i%catColors.length];
+          return(
+            <div key={g.id} className="qb-card qb-card-hover" onClick={()=>onSelectGoal(g)} style={{...card({borderLeft:`6px solid ${done?C.green:accent}`,background:done?"#F0FFF4":"#fff"})}}>
+              <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+                <div style={{fontSize:36,lineHeight:1,flexShrink:0}}>{cat.emoji}</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:5}}>
+                    <span style={tag(C.yellow,{fontSize:10})}>{cat.label}</span>
+                    {du!==null&&du>0&&du<=7&&<span style={tag(C.coral,{fontSize:10})}>🔥 {du}d!</span>}
+                    {du!==null&&du<=0&&!done&&<span style={tag(C.coral,{fontSize:10})}>⚠️ Overdue</span>}
+                    {done&&<span style={tag(C.green,{fontSize:10})}>✅ Done!</span>}
+                    {g.targetDate&&!done&&<span style={tag("#eee",{fontSize:10})}>📅 {fmtDate(g.targetDate)}</span>}
+                  </div>
+                  <div style={{fontWeight:800,fontSize:15,marginBottom:5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:C.navy}}>{g.title}</div>
+                  {g.milestones?.length>0&&<div><ProgressBar value={p} color={done?C.green:accent} height={10}/><div style={{fontSize:11,color:"#aaa",marginTop:3}}>{g.milestones.filter(m=>m.completed).length}/{g.milestones.length} milestones{(g.checkins||[]).length>0&&` · ${(g.checkins||[]).length} check-ins`}</div></div>}
+                </div>
+              </div>
+              <ShameMeter ds={ds}/>
+            </div>
+          );
+        })}
+      </div>
+      {showAdd&&<AddGoalModal memberId={currentMember.id} onClose={()=>setShowAdd(false)} onSave={handleSaveGoal}/>}
+    </div>
+  );
+}
+
+// ─── GROUP VIEW ─────────────────────────────────────
+function GroupView({data,currentMember,onSelectGoal}){
+  const goals=data.goals||[];const members=data.members||[];const nudges=data.nudges||[];
+  const doneGoals=goals.filter(g=>g.milestones?.length&&pct(g)===1).length;
+  const overallPct=goals.length?doneGoals/goals.length:0;
+  const totalPts=members.reduce((s,m)=>s+calcPts(m.id,goals,nudges),0);
+  const ranked=[...members].map(m=>({...m,pts:calcPts(m.id,goals,nudges),mg:goals.filter(g=>g.memberId===m.id)})).sort((a,b)=>b.pts-a.pts);
+
+  return(
+    <div style={{maxWidth:640,margin:"0 auto",padding:"16px 12px 40px"}}>
+      <div style={{...card({background:`linear-gradient(135deg,${C.coral},${C.orange})`,color:"#fff",textAlign:"center"}),marginBottom:14}}>
+        <div style={{fontFamily:"Fredoka One,cursive",fontSize:26,marginBottom:4}}>🏆 Squad Progress</div>
+        <div style={{fontFamily:"Fredoka One,cursive",fontSize:52,lineHeight:1}}>{Math.round(overallPct*100)}%</div>
+        <div style={{margin:"10px 0"}}><ProgressBar value={overallPct} color="rgba(255,255,255,0.9)" height={14}/></div>
+        <div style={{display:"flex",justifyContent:"center",gap:16,fontSize:13,opacity:.9,flexWrap:"wrap"}}>
+          <span>🎯 {goals.length}</span><span>✅ {doneGoals} Done</span><span>⚡ {totalPts} XP</span><span>👥 {members.length}</span>
+        </div>
+      </div>
+      {ranked.map((member,rank)=>{
+        const avgPct=member.mg.length?member.mg.reduce((s,g)=>s+pct(g),0)/member.mg.length:0;
+        const maxLazy=member.mg.length?Math.max(...member.mg.map(g=>daysSince(g.lastCheckinAt))):0;
+        return(
+          <div key={member.id} style={{...card({marginBottom:12})}}>
+            <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:12}}>
+              <div style={{width:52,height:52,borderRadius:14,flexShrink:0,background:rank===0?C.yellow:rank===1?"#C0C0C0":rank===2?"#CD7F32":"#f0f0f0",border:`3px solid ${C.navy}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26}}>{member.emoji}</div>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:800,fontSize:15,color:C.navy}}>{rank===0?"🥇":rank===1?"🥈":rank===2?"🥉":""} {member.name}{member.id===currentMember.id&&<span style={tag(C.blue,{fontSize:10,marginLeft:7})}>You</span>}</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:4}}><span style={tag(C.yellow,{fontSize:11})}>⚡ {member.pts} XP</span><span style={tag("#eee",{fontSize:11})}>{getTitle(member.pts)}</span></div>
+              </div>
+              <div style={{textAlign:"right",flexShrink:0}}>
+                <div style={{fontFamily:"Fredoka One,cursive",fontSize:20,color:avgPct>.7?C.green:avgPct>.4?C.orange:C.coral}}>{Math.round(avgPct*100)}%</div>
+                <div style={{fontSize:11,color:"#aaa"}}>avg progress</div>
+              </div>
+            </div>
+            {member.mg.length===0?<div style={{color:"#ccc",fontSize:13,textAlign:"center",padding:"8px",background:"#fafafa",borderRadius:8,border:"1.5px dashed #eee"}}>😴 No quests yet…</div>:(
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {member.mg.map(g=>{const c=getCat(g.category);const p=pct(g);const ds=daysSince(g.lastCheckinAt);return(<div key={g.id} onClick={()=>onSelectGoal(g)} style={{display:"flex",gap:9,alignItems:"center",padding:"7px 10px",borderRadius:9,background:"#f9f9f9",border:"1.5px solid #eee",cursor:"pointer"}} onMouseEnter={e=>e.currentTarget.style.background="#f0f0f0"} onMouseLeave={e=>e.currentTarget.style.background="#f9f9f9"}><span style={{fontSize:18,lineHeight:1}}>{c.emoji}</span><span style={{flex:1,fontWeight:700,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:C.navy}}>{g.title}</span>{ds>5&&<span style={{fontSize:11,color:C.coral,fontWeight:800,flexShrink:0}}>😴{ds}d</span>}{g.milestones?.length>0&&<div style={{width:56,flexShrink:0}}><ProgressBar value={p} color={p===1?C.green:C.coral} height={8}/></div>}<span style={{fontSize:11,color:"#bbb",flexShrink:0}}>→</span></div>);})}
+              </div>
+            )}
+            {maxLazy>7&&<div style={{marginTop:10,textAlign:"center",fontSize:12,color:C.coral,fontWeight:800,background:"#FFE5E5",borderRadius:8,padding:"5px 10px"}}>{SHAME_MSGS[rank%SHAME_MSGS.length]}</div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── LEADERBOARD ────────────────────────────────────
+function Leaderboard({data}){
+  const goals=data.goals||[];const members=data.members||[];const nudges=data.nudges||[];
+  const ranked=[...members].map(m=>({...m,pts:calcPts(m.id,goals,nudges),done:goals.filter(g=>g.memberId===m.id&&g.milestones?.length&&pct(g)===1).length,total:goals.filter(g=>g.memberId===m.id).length,nudgesSent:nudges.filter(n=>n.fromMemberId===m.id).length,maxLazy:goals.filter(g=>g.memberId===m.id).reduce((mx,g)=>Math.max(mx,daysSince(g.lastCheckinAt)),0)})).sort((a,b)=>b.pts-a.pts);
+  return(
+    <div style={{maxWidth:640,margin:"0 auto",padding:"16px 12px 40px"}}>
+      <h2 style={{fontFamily:"Fredoka One,cursive",fontSize:28,textAlign:"center",marginBottom:18,color:C.navy}}>🏆 Hall of Glory (& Shame)</h2>
+      {ranked.map((m,i)=>(
+        <div key={m.id} className="qb-card" style={{...card({marginBottom:10,background:i===0?C.yellow+"33":i===1?"#C0C0C033":i===2?"#CD7F3233":"#fff"})}}>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <div style={{fontSize:28,width:36,textAlign:"center",flexShrink:0}}>{["🥇","🥈","🥉"][i]||`#${i+1}`}</div>
+            <div style={{fontSize:36,lineHeight:1}}>{m.emoji}</div>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:800,fontSize:15,color:C.navy}}>{m.name}</div>
+              <div style={{fontSize:12,color:"#888",marginTop:2}}>{getTitle(m.pts)}</div>
+              <div style={{display:"flex",gap:6,marginTop:5,flexWrap:"wrap"}}>
+                <span style={tag("#eee",{fontSize:10})}>🎯 {m.total}</span>
+                <span style={tag(m.done>0?C.green+"33":"#eee",{fontSize:10})}>✅ {m.done} done</span>
+                <span style={tag("#eee",{fontSize:10})}>📣 {m.nudgesSent} nudges</span>
+              </div>
+            </div>
+            <div style={{textAlign:"right",flexShrink:0}}>
+              <div style={{fontFamily:"Fredoka One,cursive",fontSize:26,color:C.navy,lineHeight:1}}>{m.pts}</div>
+              <div style={{fontSize:11,color:"#aaa"}}>XP</div>
+            </div>
+          </div>
+          {m.maxLazy>7&&<div style={{marginTop:10,textAlign:"center",fontSize:12,color:C.coral,fontWeight:800,background:"#FFE5E5",borderRadius:8,padding:"5px 10px"}}>{SHAME_MSGS[i%SHAME_MSGS.length]} ({m.maxLazy}d inactive)</div>}
+        </div>
+      ))}
+      <div style={{...card({marginTop:18,background:"#F0F7FF",textAlign:"center"})}}>
+        <div style={{fontFamily:"Fredoka One,cursive",fontSize:18,marginBottom:10,color:C.navy}}>⚡ How to Earn XP</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:7,justifyContent:"center"}}>
+          {[["🎯 Start a Quest","10"],["✅ Milestone","25"],["🏆 Finish Quest","100 bonus"],["📣 Nudge","5"],["📝 Check-in","5"]].map(([l,p])=>(
+            <div key={l} style={{...card({padding:"8px 12px",background:"#fff",display:"inline-block"}),fontSize:13}}><div style={{fontWeight:800}}>{l}</div><div style={{color:C.coral,fontWeight:800}}>{p} XP</div></div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── ROOT APP ───────────────────────────────────────
+function App(){
+  const [loading,setLoading]=useState(true);
+  const [data,setData]=useState({});
+  const [currentMember,setCurrentMember]=useState(null);
+  const [view,setView]=useState("dashboard");
+  const [selectedGoal,setSelectedGoal]=useState(null);
+  const pollRef=useRef(null);
+  const notConfigured=JSONBIN_BIN_ID==="PASTE_BIN_ID_HERE"||JSONBIN_API_KEY==="PASTE_API_KEY_HERE";
+
+  const loadData=useCallback(async()=>{
+    const d=await db.read();setData(d);setLoading(false);
+  },[]);
+
+  useEffect(()=>{
+    if(notConfigured){setLoading(false);return;}
+    loadData();
+    pollRef.current=setInterval(loadData,8000);
+    return()=>clearInterval(pollRef.current);
+  },[notConfigured]);
+
+  if(notConfigured) return <SetupScreen/>;
+  if(loading) return <div style={{minHeight:"100vh",background:C.cream,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Fredoka One,cursive",fontSize:26,color:C.navy}}>⚡ Loading Quest Board…</div>;
+  if(!data.groupConfig||!currentMember) return <Landing data={data} onJoin={m=>{setCurrentMember(m);loadData();}}/>;
+
+  const NAV=[{id:"dashboard",label:"My Quests",emoji:"🎯"},{id:"group",label:"The Squad",emoji:"👥"},{id:"leaderboard",label:"Leaderboard",emoji:"🏆"}];
+  const activeNudges=(data.nudges||[]).filter(n=>n.toMemberId===currentMember.id).length;
+
+  return(
+    <div style={{minHeight:"100vh",background:C.cream,fontFamily:"Nunito,sans-serif",color:C.navy}}>
+      <div style={{background:C.navy,color:"#fff",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:50}}>
+        <div>
+          <div style={{fontFamily:"Fredoka One,cursive",fontSize:20,lineHeight:1.1}}>🎯 {data.groupConfig.name}</div>
+          <div style={{fontSize:10,opacity:.5,letterSpacing:.5}}>QUEST BOARD</div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <div style={{fontSize:20}}>{currentMember.emoji}</div>
+          <div style={{textAlign:"right"}}>
+            <div style={{fontSize:13,fontWeight:800}}>{currentMember.name}</div>
+            <div style={{fontSize:11,opacity:.6}}>{getTitle(calcPts(currentMember.id,data.goals||[],data.nudges||[]))}</div>
+          </div>
+          <button className="qb-btn" style={btn(C.coral,"#fff",{padding:"4px 8px",fontSize:11})} onClick={()=>{setCurrentMember(null);setSelectedGoal(null);}}>Switch</button>
+        </div>
+      </div>
+      <div style={{background:"#141425",display:"flex",overflowX:"auto",borderBottom:`3px solid ${C.navy}`}}>
+        {NAV.map(n=>(
+          <button key={n.id} onClick={()=>{setView(n.id);setSelectedGoal(null);}} style={{background:view===n.id&&!selectedGoal?C.cream:"transparent",color:view===n.id&&!selectedGoal?C.navy:"rgba(255,255,255,.65)",border:"none",padding:"11px 18px",cursor:"pointer",fontFamily:"Nunito,sans-serif",fontWeight:800,fontSize:13,whiteSpace:"nowrap",borderRadius:view===n.id&&!selectedGoal?"8px 8px 0 0":0,position:"relative"}}>
+            {n.emoji} {n.label}
+            {n.id==="dashboard"&&activeNudges>0&&<span style={{position:"absolute",top:6,right:6,background:C.coral,color:"#fff",borderRadius:"50%",width:16,height:16,fontSize:10,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900}}>{activeNudges>9?"9+":activeNudges}</span>}
+          </button>
+        ))}
+      </div>
+      {selectedGoal?<GoalDetail goal={selectedGoal} data={data} currentMember={currentMember} onBack={()=>setSelectedGoal(null)} onUpdate={(g,nd)=>{setSelectedGoal(g);if(nd)setData(nd);}}/>
+      :view==="dashboard"?<Dashboard data={data} currentMember={currentMember} onSelectGoal={setSelectedGoal} onDataChange={setData}/>
+      :view==="group"?<GroupView data={data} currentMember={currentMember} onSelectGoal={setSelectedGoal}/>
+      :<Leaderboard data={data}/>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
